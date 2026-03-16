@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leitor de Estoque</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f4f4f9;
+        }
+        #reader {
+            width: 100%;
+            max-width: 500px;
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .controls { margin-top: 20px; width: 100%; max-width: 500px; display: flex; justify-content: space-between; }
+        button {
+            padding: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            color: white;
+            background-color: #28a745;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+        }
+        table {
+            width: 100%;
+            max-width: 500px;
+            margin-top: 20px;
+            border-collapse: collapse;
+            background-color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        th, td { border-bottom: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #007bff; color: white; }
+    </style>
+</head>
+<body>
+
+    <h2 style="color: #333;">Leitor de Produtos</h2>
+    
+    <div id="reader"></div>
+
+    <div class="controls">
+        <button onclick="exportarPlanilha()">📥 Baixar Planilha (CSV)</button>
+    </div>
+
+    <table id="tabela-resultados">
+        <thead>
+            <tr>
+                <th>Código</th>
+                <th>Produto</th>
+            </tr>
+        </thead>
+        <tbody id="corpo-tabela">
+        </tbody>
+    </table>
+
+    <audio id="som-bipe" src="https://www.soundjay.com/buttons/sounds/beep-07a.mp3" preload="auto"></audio>
+
+    <script>
+        let dadosLidos = [];
+        let leitorPausado = false;
+
+        function tocarBipe() {
+            const bipe = document.getElementById('som-bipe');
+            bipe.currentTime = 0; // Reseta o áudio
+            bipe.play();
+        }
+
+        function sucessoNaLeitura(textoDecodificado) {
+            // Se já estiver perguntando o nome de um produto, ignora novas leituras
+            if (leitorPausado) return; 
+
+            leitorPausado = true;
+            tocarBipe();
+
+            // Um pequeno delay para o bipe tocar antes da tela travar com a pergunta
+            setTimeout(() => {
+                let nomeProduto = prompt(`Código lido: ${textoDecodificado}\nQual é o nome deste produto?`);
+                
+                if (nomeProduto && nomeProduto.trim() !== "") {
+                    // Salva na memória
+                    dadosLidos.push({ codigo: textoDecodificado, produto: nomeProduto });
+                    atualizarTabela();
+                }
+                
+                // Libera a câmera para o próximo bipe
+                leitorPausado = false;
+            }, 200);
+        }
+
+        function erroNaLeitura(erro) {
+            // A biblioteca dispara erros constantemente quando não acha códigos no frame de vídeo.
+            // Apenas ignoramos para manter rodando liso.
+        }
+
+        // Inicializa o leitor
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader",
+            { fps: 10, qrbox: {width: 250, height: 150} },
+            false
+        );
+        html5QrcodeScanner.render(sucessoNaLeitura, erroNaLeitura);
+
+        // Atualiza a tabela na tela
+        function atualizarTabela() {
+            const tbody = document.getElementById('corpo-tabela');
+            tbody.innerHTML = ''; // Limpa a tabela
+            dadosLidos.forEach(item => {
+                let linha = `<tr><td>${item.codigo}</td><td>${item.produto}</td></tr>`;
+                tbody.innerHTML += linha;
+            });
+        }
+
+        // Gera o arquivo CSV
+        function exportarPlanilha() {
+            if (dadosLidos.length === 0) {
+                alert("Nenhum produto foi lido ainda!");
+                return;
+            }
+            
+            // Cria o cabeçalho do CSV
+            let conteudoCsv = "data:text/csv;charset=utf-8,\uFEFF"; // \uFEFF ajuda o Excel a entender acentos (UTF-8)
+            conteudoCsv += "Código;Produto\n"; // Separado por ponto e vírgula para abrir mais fácil no Excel BR
+            
+            // Adiciona as linhas
+            dadosLidos.forEach(function(linha) {
+                // Aspas garantem que se tiver vírgula no nome do produto, o CSV não quebra
+                let textoLinha = `${linha.codigo};"${linha.produto}"`; 
+                conteudoCsv += textoLinha + "\n";
+            });
+
+            // Força o download
+            const uriCodificada = encodeURI(conteudoCsv);
+            const link = document.createElement("a");
+            link.setAttribute("href", uriCodificada);
+            link.setAttribute("download", "controle_de_estoque.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
