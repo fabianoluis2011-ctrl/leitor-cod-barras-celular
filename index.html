@@ -18,10 +18,11 @@
         #reader {
             width: 100%;
             max-width: 500px;
-            background-color: white;
+            background-color: black;
             border-radius: 8px;
             overflow: hidden;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            min-height: 300px; /* Garante um espaço visual antes da câmera carregar */
         }
         .controls { margin-top: 20px; width: 100%; max-width: 500px; display: flex; justify-content: space-between; }
         button {
@@ -72,29 +73,40 @@
 
     <script>
         let dadosLidos = [];
+        let codigosLidos = new Set(); // Usado para checar duplicidade rapidamente
         let leitorPausado = false;
 
         function tocarBipe() {
             const bipe = document.getElementById('som-bipe');
-            bipe.currentTime = 0; // Reseta o áudio
+            bipe.currentTime = 0; 
             bipe.play();
         }
 
         function sucessoNaLeitura(textoDecodificado) {
-            // Se já estiver perguntando o nome de um produto, ignora novas leituras
             if (leitorPausado) return; 
+
+            // Verificação de Duplicidade
+            if (codigosLidos.has(textoDecodificado)) {
+                leitorPausado = true;
+                alert(`Atenção: O código ${textoDecodificado} já foi lido e está na lista!`);
+                // Dá um pequeno tempo antes de liberar a leitura de novo para não travar a tela
+                setTimeout(() => { leitorPausado = false; }, 1500);
+                return;
+            }
 
             leitorPausado = true;
             tocarBipe();
 
-            // Um pequeno delay para o bipe tocar antes da tela travar com a pergunta
             setTimeout(() => {
                 let nomeProduto = prompt(`Código lido: ${textoDecodificado}\nQual é o nome deste produto?`);
                 
                 if (nomeProduto && nomeProduto.trim() !== "") {
-                    // Salva na memória
+                    // Salva na memória e no Set de duplicidade
                     dadosLidos.push({ codigo: textoDecodificado, produto: nomeProduto });
+                    codigosLidos.add(textoDecodificado); 
                     atualizarTabela();
+                } else {
+                    alert("Produto ignorado. Você não digitou um nome.");
                 }
                 
                 // Libera a câmera para o próximo bipe
@@ -103,22 +115,29 @@
         }
 
         function erroNaLeitura(erro) {
-            // A biblioteca dispara erros constantemente quando não acha códigos no frame de vídeo.
-            // Apenas ignoramos para manter rodando liso.
+            // Ignorado de propósito para manter o vídeo rodando liso
         }
 
-        // Inicializa o leitor
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader",
-            { fps: 10, qrbox: {width: 250, height: 150} },
-            false
-        );
-        html5QrcodeScanner.render(sucessoNaLeitura, erroNaLeitura);
+        // Inicializa o leitor forçando a câmera traseira
+        const html5QrCode = new Html5Qrcode("reader");
+        
+        // A configuração { facingMode: "environment" } força o uso da câmera de trás
+        html5QrCode.start(
+            { facingMode: "environment" }, 
+            {
+                fps: 10,    // Leituras por segundo
+                qrbox: { width: 250, height: 150 } // Área de foco do leitor
+            },
+            sucessoNaLeitura,
+            erroNaLeitura
+        ).catch(err => {
+            alert(`Erro ao iniciar a câmera traseira. Verifique as permissões. Detalhe: ${err}`);
+        });
 
         // Atualiza a tabela na tela
         function atualizarTabela() {
             const tbody = document.getElementById('corpo-tabela');
-            tbody.innerHTML = ''; // Limpa a tabela
+            tbody.innerHTML = ''; 
             dadosLidos.forEach(item => {
                 let linha = `<tr><td>${item.codigo}</td><td>${item.produto}</td></tr>`;
                 tbody.innerHTML += linha;
@@ -128,26 +147,22 @@
         // Gera o arquivo CSV
         function exportarPlanilha() {
             if (dadosLidos.length === 0) {
-                alert("Nenhum produto foi lido ainda!");
+                alert("Nenhum produto foi lido ainda para baixar a planilha!");
                 return;
             }
             
-            // Cria o cabeçalho do CSV
-            let conteudoCsv = "data:text/csv;charset=utf-8,\uFEFF"; // \uFEFF ajuda o Excel a entender acentos (UTF-8)
-            conteudoCsv += "Código;Produto\n"; // Separado por ponto e vírgula para abrir mais fácil no Excel BR
+            let conteudoCsv = "data:text/csv;charset=utf-8,\uFEFF"; 
+            conteudoCsv += "Código;Produto\n"; 
             
-            // Adiciona as linhas
             dadosLidos.forEach(function(linha) {
-                // Aspas garantem que se tiver vírgula no nome do produto, o CSV não quebra
                 let textoLinha = `${linha.codigo};"${linha.produto}"`; 
                 conteudoCsv += textoLinha + "\n";
             });
 
-            // Força o download
             const uriCodificada = encodeURI(conteudoCsv);
             const link = document.createElement("a");
             link.setAttribute("href", uriCodificada);
-            link.setAttribute("download", "controle_de_estoque.csv");
+            link.setAttribute("download", "estoque_produtos.csv");
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
